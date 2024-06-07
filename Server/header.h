@@ -44,7 +44,13 @@ public:
     int totalPacket;
     int no;
 
-    Header() {}
+    Header() {
+        this->type = Text;
+        this->fileName = "null";
+        this->dataSize = 0;
+        this->totalPacket = 0;
+        this->no = 0;
+    }
 
     Header(MessageType type, int dataSize, int totalPacket, int no)
     {

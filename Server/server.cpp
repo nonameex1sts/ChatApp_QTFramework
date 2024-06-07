@@ -2,7 +2,20 @@
 #include "header.h"
 
 Server::Server() {
-    server = new QTcpServer();
+    this->server = new QTcpServer();
+
+    // Initialize the file data packets buffer
+    this->fileDataPackets = new Packet[PACKET_BUFFER_SIZE];
+
+    // Initialize the two pointers for the file data packets buffer
+    this->endFileDataPacketIndex = 0;
+    this->currentFileDataPacketIndex = 0;
+
+    // Create a timer to send the file data packets to the clients
+    this->timer = new QTimer(this);
+    timer->setInterval(10);
+    connect(timer, &QTimer::timeout, this, &Server::sendFileDataPacket);
+    timer->start();
 
     // Clear the file directory when the server starts
     QDir dir(FILE_DIR);
@@ -34,6 +47,75 @@ Server::~Server() {
     qDebug() << "Server destroyed";
 }
 
+// Add new clients to the server and connect signals
+void Server::addNewClients(QTcpSocket *client) {
+    clients.append(client);
+    connect(client, &QTcpSocket::readyRead, this, &Server::readDataFromClient);
+    connect(client, &QTcpSocket::disconnected, this, &Server::clientDisconnected);
+    qDebug() << "Client connected at port " << client->peerPort() << " with address " << client->peerAddress().toString();
+}
+
+// Send file to the client who requested it
+void Server::readFile(QString fileName) {
+    QByteArray fileData;
+
+    // Open the file and read the data
+    QFile file(FILE_DIR + fileName);
+    if(file.open(QIODevice::ReadOnly))
+    {
+        fileData = file.readAll();
+        file.close();
+    }
+
+    // Calculate the number of packets needed to send the file
+    int numOfPackets = fileData.length() / DATA_SIZE + 1;
+
+    // Create each packet push it to the file data packets buffer
+    for(int i = 0; i < numOfPackets; i++)
+    {
+        QByteArray rawData = fileData.mid(i * DATA_SIZE, DATA_SIZE);
+        Header header(MessageType::FileData, fileName, rawData.size(), numOfPackets, i + 1);
+        Packet packet(header, rawData);
+
+        // Increment the end file data packet index after inserting the packet
+        fileDataPackets[endFileDataPacketIndex] = packet;
+        endFileDataPacketIndex = (endFileDataPacketIndex + 1) % PACKET_BUFFER_SIZE;
+    }
+}
+
+// Send a packet to all clients
+void Server::sendPacketToAllClients(Packet packet) {
+    foreach (QTcpSocket* forwardClient, clients) {
+        // Lock the mutex
+        mutex.lock();
+
+        QDataStream forwardStream(forwardClient);
+        forwardStream.setVersion(QDataStream::Qt_6_7);
+        forwardStream << packet.toByteArray();
+
+        // Unlock the mutex
+        mutex.unlock();
+    }
+}
+
+// Send a packet to all clients except the one that sent the packet
+void Server::sendPacketToAllOtherClients(QTcpSocket *currentClient, Packet packet) {
+    foreach (QTcpSocket* forwardClient, clients) {
+        if(forwardClient != currentClient)
+        {
+            // Lock the mutex
+            mutex.lock();
+
+            QDataStream forwardStream(forwardClient);
+            forwardStream.setVersion(QDataStream::Qt_6_7);
+            forwardStream << packet.toByteArray();
+
+            // Unlock the mutex
+            mutex.unlock();
+        }
+    }
+}
+
 void Server::newConnection() {
     while(server->hasPendingConnections())
     {
@@ -49,16 +131,12 @@ void Server::clientDisconnected() {
     // Remove the client from the list of clients
     clients.removeAll(client);
 
-    // Send a disconnection message to all clients
+    // Send a disconnection message to all remaining clients
     QString clientName = clientNames[client];
     Header header(MessageType::Disconnection, clientName.size(), 1, 1);
     Packet packet(header, clientName);
 
-    foreach (QTcpSocket* socket, clients) {
-        QDataStream stream(socket);
-        stream.setVersion(QDataStream::Qt_6_7);
-        stream << packet.toByteArray();
-    }
+    sendPacketToAllClients(packet);
 
     // Remove the client from the list of client names
     clientNames.remove(client);
@@ -75,27 +153,17 @@ void Server::readDataFromClient() {
     QDataStream stream(client);
     stream.setVersion(QDataStream::Qt_6_7);
 
-    // Read the data from the socket until the start byte is found
-    while(client->read(1)[0] != START_BYTE)
-    {
-    }
-
-    bool firstPacketFlag = true;
-
     // Read the data from the socket until there is no more data to read
-    while(client->bytesAvailable() >= HEADER_SIZE + DATA_SIZE + TAIL_SIZE - firstPacketFlag)
+    while(client->bytesAvailable() >= HEADER_SIZE + DATA_SIZE + TAIL_SIZE)
     {
-        // If this is the first packet, add the start byte to the buffer
-        if(firstPacketFlag)
+        // Read the data from the socket until the start byte is found
+        while(client->read(1)[0] != START_BYTE)
         {
-            DataBuffer = client->read(HEADER_SIZE + DATA_SIZE + TAIL_SIZE - 1);
-            DataBuffer.prepend(START_BYTE);
-            firstPacketFlag = false;
         }
-        else
-        {
-            DataBuffer = client->read(HEADER_SIZE + DATA_SIZE + TAIL_SIZE);
-        }
+
+        // Read the data from the socket and prepend the start byte
+        DataBuffer = client->read(HEADER_SIZE + DATA_SIZE + TAIL_SIZE - 1);
+        DataBuffer.prepend(START_BYTE);
 
         // Parse the data buffer and handle the data
         Packet packet(DataBuffer);
@@ -105,11 +173,13 @@ void Server::readDataFromClient() {
         switch (header.type){
             case MessageType::Text:
             {
+                // Forward the message to all other clients
                 sendPacketToAllOtherClients(client, packet);
                 break;
             }
             case MessageType::Connection:
             {
+                // Forward the connection message to all other clients
                 sendPacketToAllOtherClients(client, packet);
 
                 // Add the client to the list of clients
@@ -129,6 +199,7 @@ void Server::readDataFromClient() {
             }
             case MessageType::Disconnection:
             {
+                // Handle the disconnection
                 clientDisconnected();
                 break;
             }
@@ -145,30 +216,25 @@ void Server::readDataFromClient() {
                     }
                     file.close();
                 }
-                else
-                {
-                    qDebug() << "Could not open file";
-                }
 
-                // Send file info to all clients
+                // Send file info to all clients if all packets have been received
                 if(header.no == header.totalPacket)
                 {
                     QString senderName = clientNames[client];
                     Header fileInfoHeader(MessageType::FileInfo, header.fileName, senderName.size(), 1, 1);
                     Packet fileInfoPacket(fileInfoHeader, senderName);
 
-                    foreach (QTcpSocket* forwardClient, clients) {
-                        QDataStream forwardStream(forwardClient);
-                        forwardStream.setVersion(QDataStream::Qt_6_7);
-                        forwardStream << fileInfoPacket.toByteArray();
-                    }
+                    sendPacketToAllClients(fileInfoPacket);
                 }
 
                 break;
             }
             case MessageType::FileInfo:
             {
-                sendFile(client, header.fileName);
+                // Add the client to the file request queue
+                fileRequestQueue.push(client);
+
+                readFile(header.fileName);
                 break;
             }
             default:
@@ -180,58 +246,36 @@ void Server::readDataFromClient() {
     }
 }
 
-// Add new clients to the server and connect signals
-void Server::addNewClients(QTcpSocket *client) {
-    clients.append(client);
-    connect(client, &QTcpSocket::readyRead, this, &Server::readDataFromClient);
-    connect(client, &QTcpSocket::disconnected, this, &Server::clientDisconnected);
-    qDebug() << "Client connected at port " << client->peerPort() << " with address " << client->peerAddress().toString();
-}
-
-// Send file to the client who requested it
-void Server::sendFile(QTcpSocket *client, QString fileName) {
-    if(client->isOpen())
+// Send a file to the server
+void Server::sendFileDataPacket()
+{
+    QTcpSocket *client = fileRequestQueue.front();
+    if(client && client->isOpen())
     {
-        QByteArray fileData;
-
-        // Open the file and read the data
-        QFile file(FILE_DIR + fileName);
-        if(file.open(QIODevice::ReadOnly))
+        if(currentFileDataPacketIndex != endFileDataPacketIndex)
         {
-            fileData = file.readAll();
-            file.close();
-        }
+            // Lock the mutex
+            mutex.lock();
 
-        QDataStream stream(client);
-        stream.setVersion(QDataStream::Qt_6_7);
+            // Get the paclet
+            Packet packet = fileDataPackets[currentFileDataPacketIndex];
 
-        // Calculate the number of packets needed to send the file
-        int numOfPackets = fileData.length() / DATA_SIZE + 1;
+            // Send the packet to the server using the socket
+            QDataStream stream(client);
+            stream.setVersion(QDataStream::Qt_6_7);
 
-        // Create each packet and send to the client
-        for(int i = 0; i <= numOfPackets; i++)
-        {
-            QByteArray rawData = fileData.mid(i * DATA_SIZE, DATA_SIZE);
-            Header header(MessageType::FileData, fileName, rawData.size(), numOfPackets, i + 1);
-            Packet packet(header, rawData);
-
+            // Increment the current file data packet index
             stream << packet.toByteArray();
-        }
-    }
-    else
-    {
-        qDebug() << "Client is not connected";
-    }
-}
+            currentFileDataPacketIndex = (currentFileDataPacketIndex + 1) % PACKET_BUFFER_SIZE;
 
-// Send a packet to all clients except the one that sent the packet
-void Server::sendPacketToAllOtherClients(QTcpSocket *currentClient, Packet packet) {
-    foreach (QTcpSocket* forwardClient, clients) {
-        if(forwardClient != currentClient)
-        {
-            QDataStream forwardStream(forwardClient);
-            forwardStream.setVersion(QDataStream::Qt_6_7);
-            forwardStream << packet.toByteArray();
+            // If the last packet was sent, remove the first-in-line client from the queue
+            if(packet.getHeader().no == packet.getHeader().totalPacket)
+            {
+                fileRequestQueue.pop();
+            }
+
+            // Unlock the mutex
+            mutex.unlock();
         }
     }
 }

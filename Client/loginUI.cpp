@@ -1,6 +1,6 @@
-#include "login.h"
-#include "ui_login.h"
-#include "chat.h"
+#include "loginUI.h"
+#include "ui_loginUI.h"
+#include "chatUI.h"
 
 Login::Login(QWidget *parent)
     : QWidget(parent)

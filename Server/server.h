@@ -5,33 +5,43 @@
 #include <QtNetwork>
 #include <QtWidgets>
 #include <QDir>
+#include <queue>
 
 #include "packet.h"
 
 #define FILE_DIR "files/"
+#define PACKET_BUFFER_SIZE 50000
 
 class Server : public QObject
 {
     Q_OBJECT
 
 private:
-    QTcpServer *server;
-    QList<QTcpSocket *> clients;
-    QMap<QTcpSocket*, QString> clientNames;
+    void addNewClients(QTcpSocket *client);
+    void readFile(QString fileName);
+    void sendPacketToAllClients(Packet packet);
+    void sendPacketToAllOtherClients(QTcpSocket *currentClient, Packet packet);
 
 private slots:
     void newConnection();
     void clientDisconnected();
     void readDataFromClient();
-
-private:
-    void addNewClients(QTcpSocket *client);
-    void sendFile(QTcpSocket *client, QString fileName);
-    void sendPacketToAllOtherClients(QTcpSocket *currentClient, Packet packet);
+    void sendFileDataPacket();
 
 public:
     Server();
     ~Server();
+
+private:
+    QTcpServer *server;
+    QList<QTcpSocket *> clients;
+    QMap<QTcpSocket*, QString> clientNames;
+    QTimer *timer;
+    Packet *fileDataPackets;
+    std::queue<QTcpSocket*> fileRequestQueue;
+    QMutex mutex;
+    int endFileDataPacketIndex;
+    int currentFileDataPacketIndex;
 };
 
 #endif // SERVER_H

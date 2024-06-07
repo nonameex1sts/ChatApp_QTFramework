@@ -15,7 +15,10 @@ class Packet
         Header header;
         QByteArray data;
 
-        Packet();
+        Packet() {
+            this->header = Header();
+            this->data = QByteArray(DATA_SIZE + TAIL_SIZE, 0);
+        };
 
         Packet(QByteArray rawData)
         {

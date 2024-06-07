@@ -7,7 +7,7 @@
 #include <QtGui>
 #include <QtWidgets>
 
-#include "header.h"
+#include "tcp_manager_thread.h"
 
 namespace Ui {
 class Chat;
@@ -22,25 +22,20 @@ public:
     Chat(QTcpSocket *socket, QString clientName, QWidget *parent = nullptr);
     ~Chat();
 
-private:
-    void addDialogToUI(QString message, QColor color);
+private slots:
+    void addDialogToUI(MessageType type, QString message);
     void addNewClientToUI(QString clientName);
     void deleteClientFromUI(QString clientName);
-    void sendMessage(MessageType type, QByteArray message);
-    void sendFile(QString filePath);
-    void requestFile(QString fileName);
     void addNewSharedFileToUI(QString fileName);
-
-private slots:
     void on_action_attachFileButton_clicked();
     void on_action_sendButton_clicked();
     void removeAttachFile(QListWidgetItem* item);
     void downloadFile(QListWidgetItem* item);
-    void readDataFromSocket();
+
 
 private:
     Ui::Chat *ui;
-    QTcpSocket *socket;
+    TCPManagerThread *tcpManager;
     QString clientName;
     QStandardItemModel *clientListModel;
     QList<QString> filePathList;
