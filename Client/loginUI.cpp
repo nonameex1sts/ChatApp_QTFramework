@@ -7,6 +7,7 @@ Login::Login(QWidget *parent)
     , ui(new Ui::Login)
 {
     ui->setupUi(this);
+    this->setWindowTitle("Login");
 
     // Connect the "connect" button to the login function
     connect(ui->connectButton, &QPushButton::clicked, this, &Login::on_action_loginButton_clicked);
