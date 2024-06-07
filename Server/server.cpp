@@ -13,7 +13,7 @@ Server::Server() {
 
     // Create a timer to send the file data packets to the clients
     this->timer = new QTimer(this);
-    timer->setInterval(10);
+    timer->setInterval(5);
     connect(timer, &QTimer::timeout, this, &Server::sendFileDataPacket);
     timer->start();
 
@@ -167,8 +167,8 @@ void Server::readDataFromClient() {
 
         // Parse the data buffer and handle the data
         Packet packet(DataBuffer);
-        Header header = packet.getHeader();
-        QByteArray data = packet.getData();
+        Header header = packet.header;
+        QByteArray data = packet.data;
 
         switch (header.type){
             case MessageType::Text:
@@ -269,7 +269,7 @@ void Server::sendFileDataPacket()
             currentFileDataPacketIndex = (currentFileDataPacketIndex + 1) % PACKET_BUFFER_SIZE;
 
             // If the last packet was sent, remove the first-in-line client from the queue
-            if(packet.getHeader().no == packet.getHeader().totalPacket)
+            if(packet.header.no == packet.header.totalPacket)
             {
                 fileRequestQueue.pop();
             }

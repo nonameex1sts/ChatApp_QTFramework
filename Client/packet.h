@@ -61,16 +61,6 @@ class Packet
 
             return rawData;
         };
-
-        Header getHeader()
-        {
-            return this->header;
-        };
-
-        QByteArray getData()
-        {
-            return this->data;
-        };
 };
 
 #endif // PACKET_H

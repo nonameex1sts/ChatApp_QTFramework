@@ -29,12 +29,14 @@ private slots:
     void addNewSharedFileToUI(QString fileName);
     void on_action_attachFileButton_clicked();
     void on_action_sendButton_clicked();
+    void updateLoadingBar(qint64 numBytes);
     void removeAttachFile(QListWidgetItem* item);
     void downloadFile(QListWidgetItem* item);
 
 
 private:
     Ui::Chat *ui;
+    QTimer *loadingBarResetTimer;
     TCPManagerThread *tcpManager;
     QString clientName;
     QStandardItemModel *clientListModel;

@@ -30,6 +30,7 @@ signals:
     void newClientConnected(QString clientName);
     void clientDisconnected(QString clientName);
     void newFileReceived(QString fileName);
+    void fileProgress(int progress);
 
 private slots:
     void readDataFromSocket();

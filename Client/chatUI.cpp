@@ -1,5 +1,5 @@
 #include "chatUI.h"
-#include "ui_chat.h"
+#include "ui_chatUI.h"
 
 Chat::Chat(QWidget *parent)
     : QWidget(parent)
@@ -24,9 +24,14 @@ Chat::Chat(QTcpSocket *socket, QString clientName, QWidget *parent)
     connect(tcpManager, &TCPManagerThread::newClientConnected, this, &Chat::addNewClientToUI);
     connect(tcpManager, &TCPManagerThread::clientDisconnected, this, &Chat::deleteClientFromUI);
     connect(tcpManager, &TCPManagerThread::newFileReceived, this, &Chat::addNewSharedFileToUI);
+    connect(tcpManager, &TCPManagerThread::fileProgress, this, &Chat::updateLoadingBar);
 
     // Start the TCP manager thread
     this->tcpManager->start();
+
+    // Create a timer to reset the loading bar
+    this->loadingBarResetTimer = new QTimer(this);
+    connect(loadingBarResetTimer, &QTimer::timeout, this, [this](){ui->loadingBar->setValue(0);});
 
     // Connect the buttons and list widgets to their respective functions
     connect(ui->attachFileButton, &QPushButton::clicked, this, &Chat::on_action_attachFileButton_clicked);
@@ -148,6 +153,18 @@ void Chat::on_action_sendButton_clicked()
     // Clear the list of attached files
     filePathList.clear();
     ui->attachedFileList->clear();
+}
+
+// Update the loading bar when a file is being sent or received
+void Chat::updateLoadingBar(qint64 numBytes)
+{
+    ui->loadingBar->setValue(numBytes);
+
+    // When the bar is full, reset the loading bar after 3 seconds
+    if(numBytes == 100)
+    {
+        loadingBarResetTimer->start(3000);
+    }
 }
 
 // When the file in the attached file list widget is double clicked, remove it from the list

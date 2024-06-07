@@ -16,7 +16,7 @@ TCPManagerThread::TCPManagerThread(QTcpSocket *socket)
 
     // Create a timer to send the file data packets to the server
     this->timer = new QTimer(this);
-    timer->setInterval(10);
+    timer->setInterval(5);
     connect(timer, &QTimer::timeout, this, &TCPManagerThread::sendFileDataPacket);
     timer->start();
 }
@@ -72,9 +72,12 @@ void TCPManagerThread::sendFileDataPacket()
             // Send the packet to the server using the socket
             QDataStream stream(socket);
             stream.setVersion(QDataStream::Qt_6_7);
+            stream << fileDataPackets[currentFileDataPacketIndex].toByteArray();
+
+            // Update the progress bar
+            emit fileProgress(fileDataPackets[currentFileDataPacketIndex].header.no * 100 / fileDataPackets[currentFileDataPacketIndex].header.totalPacket);
 
             // Increment the current file data packet index
-            stream << fileDataPackets[currentFileDataPacketIndex].toByteArray();
             currentFileDataPacketIndex = (currentFileDataPacketIndex + 1) % PACKET_BUFFER_SIZE;
 
             // Unlock the mutex
@@ -160,8 +163,8 @@ void TCPManagerThread::readDataFromSocket()
 
             // Parse the data buffer and handle the data
             Packet packet(DataBuffer);
-            Header header = packet.getHeader();
-            QByteArray data = packet.getData();
+            Header header = packet.header;
+            QByteArray data = packet.data;
 
             // Handle the data based on the message type
             switch (header.type) {
@@ -214,10 +217,8 @@ void TCPManagerThread::readDataFromSocket()
                     file.close();
                 }
 
-                // If the last packet has been received, emmit a signal to add a message to the chat dialog widget
-                if(header.no == header.totalPacket){
-                    emit newMessageReceived(header.type, header.fileName + " has been downloaded");
-                }
+                // Emmit signal to update the file progress bar
+                emit fileProgress(header.no * 100 / header.totalPacket);
 
                 break;
             }
