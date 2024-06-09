@@ -32,7 +32,7 @@ private slots:
     void updateLoadingBar(qint64 numBytes);
     void removeAttachFile(QListWidgetItem* item);
     void downloadFile(QListWidgetItem* item);
-
+    void displayError();
 
 private:
     Ui::Chat *ui;

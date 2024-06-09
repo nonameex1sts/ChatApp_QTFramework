@@ -38,7 +38,7 @@ TCPManagerThread::~TCPManagerThread()
 // Send a message to the server
 void TCPManagerThread::sendMessage(MessageType type, QByteArray message)
 {
-    if(socket && socket->isOpen())
+    if(socket->waitForConnected(3000))
     {
         // Create a new packet with the message and send it to the server using the socket
         Header header(type, message.size(), 1, 1);
@@ -55,13 +55,22 @@ void TCPManagerThread::sendMessage(MessageType type, QByteArray message)
 
         // Unlock the mutex
         mutex.unlock();
+
+        if(type == MessageType::Text)
+        {
+            emit newMessageReceived(type, QString(message));
+        }
+    }
+    else
+    {
+        emit connectionError();
     }
 }
 
 // Send a file to the server
 void TCPManagerThread::sendFileDataPacket()
 {
-    if(socket && socket->isOpen())
+    if(socket->waitForConnected(3000))
     {
         // Check if there are packets to send
         if(currentFileDataPacketIndex != endFileDataPacketIndex)
@@ -89,7 +98,7 @@ void TCPManagerThread::sendFileDataPacket()
 // Request a file from the server
 void TCPManagerThread::requestFile(QString fileName)
 {
-    if(socket && socket->isOpen())
+    if(socket->waitForConnected(3000))
     {
         // Create a new packet with the file name and send it to the server using the socket
         Header header(MessageType::FileInfo, fileName, 0, 1, 1);
@@ -106,43 +115,54 @@ void TCPManagerThread::requestFile(QString fileName)
         // Unlock the mutex
         mutex.unlock();
     }
+    else
+    {
+        emit connectionError();
+    }
 }
 
 // Read the files, create the packets and push them to the file data packets buffer
 void TCPManagerThread::readFiles(QStringList filePaths)
 {
-    foreach(QString filePath, filePaths)
+    if(socket->waitForConnected(3000))
     {
-        QByteArray fileData;
-
-        // Open the file and read the data
-        QFile file(filePath);
-        if(file.open(QIODevice::ReadOnly))
+        foreach(QString filePath, filePaths)
         {
-            fileData = file.readAll();
-            file.close();
+            QByteArray fileData;
+
+            // Open the file and read the data
+            QFile file(filePath);
+            if(file.open(QIODevice::ReadOnly))
+            {
+                fileData = file.readAll();
+                file.close();
+            }
+
+            // Calculate the number of packets needed to send the file
+            int numOfPackets = fileData.length() / DATA_SIZE + 1;
+
+            // Create each packet push it to the file data packets buffer
+            for(int i = 0; i < numOfPackets; i++)
+            {
+                QByteArray rawData = fileData.mid(i * DATA_SIZE, DATA_SIZE);
+                Header header(MessageType::FileData, filePath.split('/').constLast(), rawData.size(), numOfPackets, i + 1);
+                Packet packet(header, rawData);
+
+                // Increment the end file data packet index after inserting the packet
+                fileDataPackets[endFileDataPacketIndex] = packet;
+                endFileDataPacketIndex = (endFileDataPacketIndex + 1) % PACKET_BUFFER_SIZE;
+            }
         }
-
-        // Calculate the number of packets needed to send the file
-        int numOfPackets = fileData.length() / DATA_SIZE + 1;
-
-        // Create each packet push it to the file data packets buffer
-        for(int i = 0; i < numOfPackets; i++)
-        {
-            QByteArray rawData = fileData.mid(i * DATA_SIZE, DATA_SIZE);
-            Header header(MessageType::FileData, filePath.split('/').constLast(), rawData.size(), numOfPackets, i + 1);
-            Packet packet(header, rawData);
-
-            // Increment the end file data packet index after inserting the packet
-            fileDataPackets[endFileDataPacketIndex] = packet;
-            endFileDataPacketIndex = (endFileDataPacketIndex + 1) % PACKET_BUFFER_SIZE;
-        }
+    }
+    else
+    {
+        emit connectionError();
     }
 }
 
 void TCPManagerThread::readDataFromSocket()
 {
-    if(socket && socket->isOpen())
+    if(socket->waitForConnected(3000))
     {
         QByteArray DataBuffer;
 

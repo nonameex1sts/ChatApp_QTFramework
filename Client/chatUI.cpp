@@ -25,6 +25,7 @@ Chat::Chat(QTcpSocket *socket, QString clientName, QWidget *parent)
     connect(tcpManager, &TCPManagerThread::clientDisconnected, this, &Chat::deleteClientFromUI);
     connect(tcpManager, &TCPManagerThread::newFileReceived, this, &Chat::addNewSharedFileToUI);
     connect(tcpManager, &TCPManagerThread::fileProgress, this, &Chat::updateLoadingBar);
+    connect(tcpManager, &TCPManagerThread::connectionError, this, &Chat::displayError);
 
     // Start the TCP manager thread
     this->tcpManager->start();
@@ -143,12 +144,14 @@ void Chat::on_action_sendButton_clicked()
     {
         message.prepend(clientName + "> ");
         tcpManager->sendMessage(MessageType::Text, message.toUtf8());
-        addDialogToUI(MessageType::Text, message);
         ui->messageInputText->clear();
     }
 
     // Send the attached files to the server
-    tcpManager->readFiles(filePathList);
+    if(!filePathList.isEmpty())
+    {
+        tcpManager->readFiles(filePathList);
+    }
 
     // Clear the list of attached files
     filePathList.clear();
@@ -180,4 +183,10 @@ void Chat::downloadFile(QListWidgetItem* item)
 {
     QString fileName = item->text();
     tcpManager->requestFile(fileName);
+}
+
+// Display an error message box when the connection fails
+void Chat::displayError()
+{
+    QMessageBox::critical(this, "Error", "Could not connect to server");
 }
