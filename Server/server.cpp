@@ -44,6 +44,16 @@ Server::Server() {
 }
 
 Server::~Server() {
+    // Clear the file directory when the server stops
+    QDir dir(FILE_DIR);
+    if(dir.exists())
+    {
+        foreach(QString fileName, dir.entryList(QDir::Files))
+        {
+            dir.remove(fileName);
+        }
+    }
+
     qDebug() << "Server destroyed";
 }
 
